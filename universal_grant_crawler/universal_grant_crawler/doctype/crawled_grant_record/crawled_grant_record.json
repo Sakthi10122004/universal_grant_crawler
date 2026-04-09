@@ -1,0 +1,92 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:title",
+ "creation": "2026-04-07 16:49:07.757466",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "crawler_config",
+  "title",
+  "organization",
+  "grant_amount",
+  "deadline",
+  "country",
+  "source_url",
+  "description"
+ ],
+ "fields": [
+  {
+   "fieldname": "crawler_config",
+   "fieldtype": "Link",
+   "label": "Crawler Config",
+   "options": "Crawler Config"
+  },
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "label": "Title",
+   "length": 500,
+   "unique": 1
+  },
+  {
+   "fieldname": "organization",
+   "fieldtype": "Data",
+   "label": "Organization"
+  },
+  {
+   "fieldname": "grant_amount",
+   "fieldtype": "Data",
+   "label": "Grant Amount"
+  },
+  {
+   "fieldname": "deadline",
+   "fieldtype": "Data",
+   "label": "Deadline"
+  },
+  {
+   "fieldname": "country",
+   "fieldtype": "Data",
+   "label": "Country"
+  },
+  {
+   "fieldname": "source_url",
+   "fieldtype": "Data",
+   "label": "Source URL",
+   "length": 900
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Long Text",
+   "label": "Description"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-04-09 11:42:34.197486",
+ "modified_by": "Administrator",
+ "module": "Universal Grant Crawler",
+ "name": "Crawled Grant Record",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

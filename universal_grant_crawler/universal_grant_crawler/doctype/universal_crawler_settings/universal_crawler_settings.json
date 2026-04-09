@@ -1,0 +1,65 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-04-07 16:36:13.471634",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "llm_providers",
+  "max_pagination_pages",
+  "playwright_headless",
+  "request_timeout_seconds"
+ ],
+ "fields": [
+  {
+   "fieldname": "llm_providers",
+   "fieldtype": "Table",
+   "label": "LLM Providers",
+   "options": "Crawler LLM Provider"
+  },
+  {
+   "default": "50",
+   "fieldname": "max_pagination_pages",
+   "fieldtype": "Int",
+   "label": "Max Pagination Pages"
+  },
+  {
+   "default": "1",
+   "fieldname": "playwright_headless",
+   "fieldtype": "Check",
+   "label": "Playwright Headless"
+  },
+  {
+   "default": "30",
+   "fieldname": "request_timeout_seconds",
+   "fieldtype": "Int",
+   "label": "Request Timeout Seconds"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-04-07 16:39:40.230560",
+ "modified_by": "Administrator",
+ "module": "Universal Grant Crawler",
+ "name": "Universal Crawler Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -1,0 +1,65 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-04-07 16:32:16.919400",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "provider_name",
+  "model_name",
+  "api_key",
+  "priority",
+  "active"
+ ],
+ "fields": [
+  {
+   "fieldname": "model_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Model Name",
+   "placeholder": "llama-3.3-70b-versatile"
+  },
+  {
+   "fieldname": "api_key",
+   "fieldtype": "Password",
+   "in_list_view": 1,
+   "label": "API Key"
+  },
+  {
+   "fieldname": "priority",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Priority"
+  },
+  {
+   "default": "0",
+   "fieldname": "active",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "active"
+  },
+  {
+   "fieldname": "provider_name",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Provider Name",
+   "options": "\nGroq\nGemini\nOpenAI\nAnthropic\nOllama"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-04-07 16:42:11.184404",
+ "modified_by": "Administrator",
+ "module": "Universal Grant Crawler",
+ "name": "Crawler LLM Provider",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
