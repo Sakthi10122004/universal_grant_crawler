@@ -37,14 +37,15 @@
   },
   {
    "fieldname": "remaining_credits",
-   "fieldtype": "Data",
-   "label": "Remaining Credits"
+   "fieldtype": "Small Text",
+   "label": "Remaining Credits",
+   "length": 900
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-04-09 15:43:42.857563",
+ "modified": "2026-04-13 16:33:51.414803",
  "modified_by": "Administrator",
  "module": "Universal Grant Crawler",
  "name": "Crawler Config",

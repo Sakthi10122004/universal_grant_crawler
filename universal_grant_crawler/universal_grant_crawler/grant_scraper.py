@@ -1,23 +1,3 @@
-"""
-grant_scraper.py — Production-grade AI grant scraper (Full Crawler)
-=====================================================================
-Architecture:
-  1. Site Analyser → detects page type, counts total pages/grants, asks user
-  2. Playwright    → renders JS-heavy pages in headless Chromium
-  3. Pagination    → follows Next buttons up to user-chosen page count
-  4. Infinite scroll / Load-more → scrolls/clicks until user-chosen item count
-  5. Groq API      → primary LLM (llama3-70b, free: 14,400 req/day)
-  6. Gemini API    → fallback LLM (gemini-flash, free: 1,500 req/day)
-  7. Queue file    → pages exceeding daily limits, retried next run
-
-Usage:
-  python grant_scraper.py https://example.com/grants
-  python grant_scraper.py https://example.com/grants --output grants.json --append
-  python grant_scraper.py https://example.com/grants --wait 8
-  python grant_scraper.py --status
-  python grant_scraper.py --retry-queue
-"""
-
 import argparse
 import json
 import os
@@ -306,23 +286,62 @@ def handle_load_more(page, wait_seconds: int, max_clicks: int = None) -> bool:
     return found_any
 
 
-def advance_to_next_page(page, wait_seconds: int) -> bool:
-    """Clicks the next page button. Returns True if successful, False if no button."""
+def advance_to_next_page(page, wait_seconds: int, start_url: str = None) -> bool:
+    """Clicks the next page button. Returns True if successful, False if no button.
+
+    Guards against greedy selectors (e.g. 'a:has-text("Next")') that match
+    card-level links and accidentally navigate into a detail page.  After each
+    click we compare the new URL's path prefix against the listing base path;
+    if they diverge we go back and try the next selector.
+    """
+    from urllib.parse import urlparse
+
+    # Derive the base path of the search/listing page so we can detect
+    # when a click navigated us away from the results (e.g. into /opportunity/…).
+    listing_path = urlparse(start_url).path.rstrip("/") if start_url else None
+
+    url_before = page.url
+
     for label, selector in NEXT_PAGE_SELECTORS:
         try:
             el = page.locator(selector).first
-            if el.is_visible(timeout=500):
-                print(f"  ➡  Next page [{label}] clicked.")
-                el.scroll_into_view_if_needed()
-                page.wait_for_timeout(300)
-                el.click(timeout=3000)
-                
-                page.wait_for_timeout(wait_seconds * 1000)
-                try:
-                    page.wait_for_load_state("networkidle", timeout=3000)
-                except PWTimeout:
-                    pass
+            if not el.is_visible(timeout=500):
+                continue
+
+            print(f"  ➡  Next page [{label}] clicked.")
+            el.scroll_into_view_if_needed()
+            page.wait_for_timeout(300)
+            el.click(timeout=3000)
+
+            page.wait_for_timeout(wait_seconds * 1000)
+            try:
+                page.wait_for_load_state("networkidle", timeout=3000)
+            except PWTimeout:
+                pass
+
+            url_after = page.url
+
+            # ── Guard: did we land on a detail/sub-page instead of the next listing page? ──
+            if listing_path and url_after != url_before:
+                after_path = urlparse(url_after).path.rstrip("/")
+                # Accept if the new path starts with the listing base path
+                # (e.g. /search?page=2 is fine; /opportunity/abc-123 is not).
+                if not after_path.startswith(listing_path) and after_path != listing_path:
+                    print(f"  ⚠  Selector [{label}] navigated to a detail page "
+                          f"({url_after}) — going back and trying next selector.")
+                    try:
+                        page.go_back()
+                        page.wait_for_timeout(wait_seconds * 1000)
+                    except Exception:
+                        pass
+                    continue  # try the next selector
+
+            if url_after != url_before:
                 return True
+
+            # URL didn't change — selector may have matched a disabled button; continue
+            print(f"  ⚠  Selector [{label}] clicked but URL unchanged — skipping.")
+
         except Exception:
             continue
 
@@ -334,7 +353,7 @@ def advance_to_next_page(page, wait_seconds: int) -> bool:
             if (!active) return false;
             const num = parseInt(active.innerText.trim());
             if (isNaN(num)) return false;
-            
+
             const next = links.find(el => parseInt(el.innerText.trim()) === num + 1);
             if (next) {
                 next.click();
@@ -390,6 +409,8 @@ def fetch_all_pages(start_url: str, cfg: ScrapeConfig,
 
         last_text = None
 
+        unchanged_streak = 0
+
         while current_url and page_num <= cfg.max_pages:
             print(f"\n  🌐 Page {page_num}/{cfg.max_pages}: {current_url}")
 
@@ -415,8 +436,14 @@ def fetch_all_pages(start_url: str, cfg: ScrapeConfig,
             text = extract_text_from_page(page)
 
             if text == last_text:
-                print("  ⚠  Content didn't change — empty or SPA end of pagination.")
-                break
+                unchanged_streak += 1
+                print(f"  ⚠  Content unchanged (streak {unchanged_streak}/2) — "
+                      f"may be SPA end of pagination.")
+                if unchanged_streak >= 2:
+                    print("  🛑 Content unchanged twice in a row — stopping.")
+                    break
+            else:
+                unchanged_streak = 0
             last_text = text
 
             results.append((text, title, current_url))
@@ -431,7 +458,7 @@ def fetch_all_pages(start_url: str, cfg: ScrapeConfig,
 
             # Next page
             if page_num < cfg.max_pages and cfg.site_info.site_type == "paginated":
-                success = advance_to_next_page(page, wait_seconds)
+                success = advance_to_next_page(page, wait_seconds, start_url=start_url)
                 if not success:
                     print(f"  🛑 Could not find next page link.")
                     break
