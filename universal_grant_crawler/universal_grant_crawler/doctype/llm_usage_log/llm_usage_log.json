@@ -1,0 +1,129 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-04-09 16:30:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "provider_name",
+  "model_name",
+  "status",
+  "column_break_details",
+  "crawler_config",
+  "page_url",
+  "section_break_metrics",
+  "content_chars_sent",
+  "grants_extracted",
+  "column_break_metrics",
+  "response_time_ms",
+  "section_break_error",
+  "error_message"
+ ],
+ "fields": [
+  {
+   "fieldname": "provider_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Provider Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "model_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Model Name"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Success\nFailed\nContent Too Large\nRate Limited"
+  },
+  {
+   "fieldname": "column_break_details",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "crawler_config",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Crawler Config",
+   "options": "Crawler Config"
+  },
+  {
+   "fieldname": "page_url",
+   "fieldtype": "Data",
+   "label": "Page URL"
+  },
+  {
+   "fieldname": "section_break_metrics",
+   "fieldtype": "Section Break",
+   "label": "Metrics"
+  },
+  {
+   "fieldname": "content_chars_sent",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Content Chars Sent"
+  },
+  {
+   "fieldname": "grants_extracted",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Grants Extracted"
+  },
+  {
+   "fieldname": "column_break_metrics",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "response_time_ms",
+   "fieldtype": "Int",
+   "label": "Response Time (ms)"
+  },
+  {
+   "fieldname": "section_break_error",
+   "fieldtype": "Section Break",
+   "label": "Error Details",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "error_message",
+   "fieldtype": "Small Text",
+   "label": "Error Message"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-04-09 16:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "Universal Grant Crawler",
+ "name": "LLM Usage Log",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

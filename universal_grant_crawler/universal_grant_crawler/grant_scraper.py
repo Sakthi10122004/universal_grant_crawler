@@ -28,8 +28,56 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urljoin
 
-from . import config
-from .rate_tracker import RateLimitTracker
+# ── Scraper defaults (overridden at runtime from Frappe DB in run_scraper_frappe) ──
+PAGE_LOAD_WAIT_SECONDS = 4
+REQUEST_TIMEOUT        = 30      # Playwright page load timeout (seconds)
+MAX_CONTENT_CHARS      = 10_000  # Default max page text sent to LLM
+RETRY_ATTEMPTS         = 2
+RETRY_DELAY_SECONDS    = 3
+MAX_PAGINATION_PAGES   = 50
+MAX_SCROLL_ATTEMPTS    = 30
+MAX_LOAD_MORE_CLICKS   = 20
+DEFAULT_OUTPUT_FILE    = "grants.json"
+RATE_LIMIT_STATE_FILE  = ".rate_limit_state.json"
+class FrappeDBTracker:
+    def __init__(self, providers):
+        self.providers = providers
+        
+    def can_use(self, provider_name: str) -> bool:
+        try:
+            from .api import get_provider_credits
+            credits = get_provider_credits()
+            info = credits.get(provider_name)
+            if not info: return True
+            return info["remaining"] > 0
+        except Exception:
+            return True
+
+    def any_available(self) -> bool:
+        try:
+            from .api import get_provider_credits
+            credits = get_provider_credits()
+            if not credits: return True
+            return any(info["remaining"] > 0 for info in credits.values())
+        except Exception:
+            return True
+
+    def increment(self, provider_name: str) -> None:
+        # Frappe DB handles this automatically via log_llm_usage
+        pass
+
+    def status_line(self) -> str:
+        try:
+            from .api import get_provider_credits
+            credits = get_provider_credits()
+            parts = [f"{pname}: {info['used']}/{info['limit']}" for pname, info in credits.items()]
+            return "  |  ".join(parts) if parts else "No providers tracking"
+        except Exception:
+            return "Frappe DB Tracking Mode"
+
+    def print_status(self) -> None:
+        print(f"\n  📊 Daily usage → {self.status_line()}")
+
 from .site_analyser import analyse_site, prompt_user, ScrapeConfig
 
 try:
@@ -191,7 +239,7 @@ def extract_text_from_page(page) -> str:
 def handle_infinite_scroll(page, wait_seconds: int, max_items: int, items_per_page: int) -> None:
     """Scrolls until we have enough items or no new content loads."""
     scroll_pause     = max(1500, wait_seconds * 500)
-    max_scrolls      = config.MAX_SCROLL_ATTEMPTS
+    max_scrolls      = MAX_SCROLL_ATTEMPTS
     prev_height      = -1
     no_change_streak = 0
     scrolls          = 0
@@ -228,7 +276,7 @@ def handle_load_more(page, wait_seconds: int, max_clicks: int = None) -> bool:
     """Clicks load-more buttons up to max_clicks times."""
     found_any   = False
     click_pause = max(2000, wait_seconds * 1000)
-    limit       = max_clicks or config.MAX_LOAD_MORE_CLICKS
+    limit       = max_clicks or MAX_LOAD_MORE_CLICKS
 
     for i in range(limit):
         clicked = False
@@ -348,7 +396,7 @@ def fetch_all_pages(start_url: str, cfg: ScrapeConfig,
             if page_num == 1:
                 try:
                     page.goto(current_url, wait_until="networkidle",
-                              timeout=config.REQUEST_TIMEOUT * 1000)
+                              timeout=REQUEST_TIMEOUT * 1000)
                 except PWTimeout:
                     print("  ⚠  Timed out — partial content.")
                 page.wait_for_timeout(wait_seconds * 1000)
@@ -403,7 +451,7 @@ def _load_more_clicks_needed(cfg: ScrapeConfig) -> int:
     """Estimate how many Load More clicks are needed to reach max_items."""
     if cfg.max_items and cfg.site_info.items_per_page:
         return max(1, (cfg.max_items // cfg.site_info.items_per_page) - 1)
-    return config.MAX_LOAD_MORE_CLICKS
+    return MAX_LOAD_MORE_CLICKS
 
 
 # =============================================================================
@@ -430,14 +478,24 @@ def _parse_llm_response(raw: str, url: str) -> list:
     return grants
 
 
-def extract_with_provider(text: str, url: str, p: dict) -> list:
+def extract_with_provider(text: str, url: str, p: dict, max_chars: int = None) -> list:
+    """Call a single LLM provider to extract grants from page text.
+    
+    Args:
+        text: Full page text.
+        url: Page URL for context.
+        p: Provider dict with provider_name, model_name, api_key.
+        max_chars: Max characters of page content to include in prompt.
+                   Falls back to provider's max_content_chars or global default.
+    """
     name = p["provider_name"].lower()
-    prompt = EXTRACT_PROMPT.format(url=url, content=text[:config.MAX_CONTENT_CHARS])
+    char_limit = max_chars or p.get("max_content_chars") or MAX_CONTENT_CHARS
+    prompt = EXTRACT_PROMPT.format(url=url, content=text[:char_limit])
     
     if name == "groq":
         from groq import Groq
         client = Groq(api_key=p["api_key"])
-        print(f"  🤖 Groq ({p['model_name']}): extracting...")
+        print(f"  🤖 Groq ({p['model_name']}): extracting ({char_limit} chars)...")
         resp = client.chat.completions.create(
             model=p["model_name"],
             messages=[{"role": "user", "content": prompt}],
@@ -448,15 +506,14 @@ def extract_with_provider(text: str, url: str, p: dict) -> list:
     elif name == "gemini":
         from google import genai
         client = genai.Client(api_key=p["api_key"])
-        print(f"  🤖 Gemini ({p['model_name']}): extracting...")
+        print(f"  🤖 Gemini ({p['model_name']}): extracting ({char_limit} chars)...")
         resp = client.models.generate_content(model=p["model_name"], contents=prompt)
         return _parse_llm_response(resp.text, url)
         
     elif name == "openai" or name == "anthropic":
         from openai import OpenAI
-        # Assuming open-ai compatible endpoints for simplicity, or openai directly
         client = OpenAI(api_key=p["api_key"])
-        print(f"  🤖 OpenAI/Comp ({p['model_name']}): extracting...")
+        print(f"  🤖 {p['provider_name']} ({p['model_name']}): extracting ({char_limit} chars)...")
         resp = client.chat.completions.create(
             model=p["model_name"],
             messages=[{"role": "user", "content": prompt}],
@@ -466,7 +523,7 @@ def extract_with_provider(text: str, url: str, p: dict) -> list:
         
     elif name == "ollama":
         import requests
-        print(f"  🤖 Ollama ({p['model_name']}): extracting locally...")
+        print(f"  🤖 Ollama ({p['model_name']}): extracting locally ({char_limit} chars)...")
         resp = requests.post("http://localhost:11434/api/chat", json={
             "model": p["model_name"],
             "messages": [{"role": "user", "content": prompt}],
@@ -475,29 +532,150 @@ def extract_with_provider(text: str, url: str, p: dict) -> list:
         })
         return _parse_llm_response(resp.json()["message"]["content"], url)
         
-    return []
+    else:
+        print(f"  ⚠  Unknown provider type: {name}")
+        return []
 
 
-def extract_grants(page_text: str, url: str, tracker: RateLimitTracker, providers: list) -> tuple:
-    for attempt in range(1, config.RETRY_ATTEMPTS + 1):
+def _is_content_too_large_error(error: Exception) -> bool:
+    """Check if the error is due to content/request being too large."""
+    err_str = str(error).lower()
+    return any(indicator in err_str for indicator in [
+        "413", "too large", "request too large", "tokens per minute",
+        "token limit", "context length", "maximum context",
+    ])
+
+
+def extract_grants(page_text: str, url: str, tracker: 'FrappeDBTracker',
+                    providers: list, crawler_config: str = None) -> tuple:
+    """Extract grants using LLM providers with automatic failover.
+    
+    Strategy:
+      1. Try each provider in priority order.
+      2. If a provider fails with content-too-large → auto-reduce content and retry ONCE.
+      3. If a provider fails for any other reason → immediately switch to next provider.
+      4. After all providers tried, do one final retry pass with delay.
+      5. Only return empty if ALL providers have been exhausted.
+    
+    Every API call (success or failure) is logged to LLM Usage Log DocType.
+    """
+    if not providers:
+        print("  ❌ No LLM providers configured!")
+        return [], "none"
+
+    # Import usage logger (only available inside Frappe context)
+    _log_usage = None
+    try:
+        from .api import log_llm_usage
+        _log_usage = log_llm_usage
+    except Exception:
+        pass  # CLI mode — no Frappe logging
+
+    permanently_failed = set()  # Providers that failed even with reduced content
+
+    for attempt in range(1, RETRY_ATTEMPTS + 1):
         if attempt > 1:
-            print(f"  🔁 Retry {attempt}/{config.RETRY_ATTEMPTS}...")
-            time.sleep(config.RETRY_DELAY_SECONDS)
+            print(f"  🔁 Retry attempt {attempt}/{RETRY_ATTEMPTS} — trying all providers again...")
+            time.sleep(RETRY_DELAY_SECONDS)
 
         for p in providers:
             prov_name = p["provider_name"]
-            if tracker.can_use(prov_name):
-                try:
-                    grants = extract_with_provider(page_text, url, p)
-                    if grants:
-                        tracker.increment(prov_name)
-                        print(f"  ✔  {prov_name}: {len(grants)} grant(s).")
-                        return grants, prov_name
-                except Exception as e:
-                    print(f"  ⚠  {prov_name} Error: {e}")
-            else:
-                print(f"  ⚡ {prov_name} limit reached.")
 
+            # Skip providers that permanently failed this extraction
+            if prov_name in permanently_failed:
+                continue
+
+            # Skip providers that hit their daily rate limit
+            if not tracker.can_use(prov_name):
+                print(f"  ⚡ {prov_name} daily limit reached, skipping.")
+                if _log_usage:
+                    _log_usage(prov_name, p.get("model_name", ""), "Rate Limited",
+                               crawler_config=crawler_config, page_url=url)
+                continue
+
+            max_chars = p.get("max_content_chars") or MAX_CONTENT_CHARS
+
+            # ── Attempt extraction with timing ──
+            t_start = time.time()
+            try:
+                grants = extract_with_provider(page_text, url, p, max_chars)
+                elapsed_ms = int((time.time() - t_start) * 1000)
+
+                if grants:
+                    tracker.increment(prov_name)
+                    print(f"  ✔  {prov_name}: {len(grants)} grant(s) extracted. ({elapsed_ms}ms)")
+                    if _log_usage:
+                        _log_usage(prov_name, p.get("model_name", ""), "Success",
+                                   crawler_config=crawler_config, page_url=url,
+                                   content_chars_sent=max_chars,
+                                   grants_extracted=len(grants),
+                                   response_time_ms=elapsed_ms)
+                    return grants, prov_name
+                else:
+                    print(f"  ⚠  {prov_name}: returned empty, trying next provider...")
+                    if _log_usage:
+                        _log_usage(prov_name, p.get("model_name", ""), "Failed",
+                                   crawler_config=crawler_config, page_url=url,
+                                   content_chars_sent=max_chars,
+                                   response_time_ms=elapsed_ms,
+                                   error_message="LLM returned empty response")
+
+            except Exception as e:
+                elapsed_ms = int((time.time() - t_start) * 1000)
+                print(f"  ⚠  {prov_name} Error: {e}")
+
+                # ── Handle content-too-large: reduce and retry once ──
+                if _is_content_too_large_error(e):
+                    if _log_usage:
+                        _log_usage(prov_name, p.get("model_name", ""), "Content Too Large",
+                                   crawler_config=crawler_config, page_url=url,
+                                   content_chars_sent=max_chars,
+                                   response_time_ms=elapsed_ms,
+                                   error_message=str(e)[:500])
+
+                    reduced_chars = max(2000, max_chars // 2)
+                    print(f"  📏 Content too large for {prov_name}. "
+                          f"Retrying with {reduced_chars} chars (was {max_chars})...")
+                    t2 = time.time()
+                    try:
+                        grants = extract_with_provider(page_text, url, p, reduced_chars)
+                        elapsed_ms2 = int((time.time() - t2) * 1000)
+                        if grants:
+                            tracker.increment(prov_name)
+                            print(f"  ✔  {prov_name}: {len(grants)} grant(s) (reduced content, {elapsed_ms2}ms).")
+                            if _log_usage:
+                                _log_usage(prov_name, p.get("model_name", ""), "Success",
+                                           crawler_config=crawler_config, page_url=url,
+                                           content_chars_sent=reduced_chars,
+                                           grants_extracted=len(grants),
+                                           response_time_ms=elapsed_ms2)
+                            return grants, prov_name
+                    except Exception as e2:
+                        elapsed_ms2 = int((time.time() - t2) * 1000)
+                        print(f"  ⚠  {prov_name} still failed after reducing content: {e2}")
+                        permanently_failed.add(prov_name)
+                        if _log_usage:
+                            _log_usage(prov_name, p.get("model_name", ""), "Failed",
+                                       crawler_config=crawler_config, page_url=url,
+                                       content_chars_sent=reduced_chars,
+                                       response_time_ms=elapsed_ms2,
+                                       error_message=str(e2)[:500])
+                else:
+                    # Non-content error
+                    if _log_usage:
+                        _log_usage(prov_name, p.get("model_name", ""), "Failed",
+                                   crawler_config=crawler_config, page_url=url,
+                                   content_chars_sent=max_chars,
+                                   response_time_ms=elapsed_ms,
+                                   error_message=str(e)[:500])
+
+                # Always try the next provider after any error
+                print(f"  ➡  Switching to next provider...")
+                continue
+
+    # All attempts exhausted
+    print(f"  ❌ All {len(providers)} configured provider(s) failed. "
+          f"No grants extracted from this page.")
     return [], "none"
 
 
@@ -539,7 +717,7 @@ def queue_url(url: str, output: str, append: bool) -> None:
         print(f"  📋 Queued for next run → {QUEUE_FILE}")
 
 
-def process_queue(tracker: RateLimitTracker, output: str, append: bool, wait: int) -> None:
+def process_queue(tracker: 'FrappeDBTracker', output: str, append: bool, wait: int) -> None:
     if not QUEUE_FILE.exists():
         print("  ℹ  No retry queue found.")
         return
@@ -570,11 +748,10 @@ def process_queue(tracker: RateLimitTracker, output: str, append: bool, wait: in
 # =============================================================================
 
 def print_grants(grants: list, provider: str) -> None:
-    label = {"groq": "Groq (llama3-70b)", "gemini": "Gemini Flash"}.get(provider, provider)
     sep   = "─" * 64
     for i, g in enumerate(grants, 1):
         print(f"\n{sep}")
-        print(f"  Grant #{i}  [via {label}]")
+        print(f"  Grant #{i}  [via {provider}]")
         print(sep)
         print(f"  📌 Title        : {g.get('title','N/A')}")
         print(f"  🏢 Organization : {g.get('organization','N/A')}")
@@ -594,7 +771,7 @@ def print_grants(grants: list, provider: str) -> None:
             lines.append("                 " + " ".join(line))
         print("  📝 Description  :\n" + "\n".join(lines))
     print(f"\n{sep}")
-    print(f"  ✅ {len(grants)} grant(s) via {label}")
+    print(f"  ✅ {len(grants)} grant(s) via {provider}")
     print(sep)
 
 
@@ -619,12 +796,12 @@ def save_grants(grants: list, path: str, append: bool) -> None:
 # =============================================================================
 
 def scrape_and_save(url: str, output: str, append: bool,
-                    tracker: RateLimitTracker, wait: int,
+                    tracker: 'FrappeDBTracker', wait: int,
                     cfg: ScrapeConfig = None) -> bool:
     """Full pipeline: analyse → user prompt → crawl → extract → dedup → save."""
 
-    if not tracker.can_use("groq") and not tracker.can_use("gemini"):
-        print("  🚫 Both limits exhausted.")
+    if not tracker.any_available():
+        print("  🚫 All provider limits exhausted.")
         queue_url(url, output, append)
         return False
 
@@ -656,8 +833,8 @@ def scrape_and_save(url: str, output: str, append: bool,
 
     for page_text, page_title, page_url in pages:
         print(f"\n  🔎 Extracting: {page_url}")
-        if not tracker.can_use("groq") and not tracker.can_use("gemini"):
-            print("  🚫 Limits hit mid-crawl — queuing remaining.")
+        if not tracker.any_available():
+            print("  🚫 All provider limits hit mid-crawl — queuing remaining.")
             queue_url(page_url, output, True)
             continue
         grants, provider = extract_grants(page_text, page_url, tracker, getattr(cfg, 'providers', []))
@@ -696,13 +873,13 @@ def run_scraper_frappe(config_name):
     max_pages = cfg_doc.max_pages or 10
     
     # 2. Get Single Settings Document
-    from . import config
+    global MAX_PAGINATION_PAGES, MAX_SCROLL_ATTEMPTS, REQUEST_TIMEOUT
     settings = frappe.get_single("Universal Crawler Settings")
-    
-    # Temporarily override settings dynamically!
-    config.MAX_PAGINATION_PAGES = getattr(settings, 'max_pagination_pages', 50) or 50
-    config.MAX_SCROLL_ATTEMPTS = getattr(settings, 'max_scroll_attempts', 20) or 20
-    config.REQUEST_TIMEOUT = getattr(settings, 'request_timeout_seconds', 30) or 30
+
+    # Override module-level defaults with values from Frappe DB
+    MAX_PAGINATION_PAGES = getattr(settings, 'max_pagination_pages', 50) or 50
+    MAX_SCROLL_ATTEMPTS  = getattr(settings, 'max_scroll_attempts', 20) or 20
+    REQUEST_TIMEOUT      = getattr(settings, 'request_timeout_seconds', 30) or 30
     
     from .api import log_to_frappe
     
@@ -719,7 +896,7 @@ def run_scraper_frappe(config_name):
         log_to_frappe(config_name, f"🔬 Analysing site: {url}")
         
         # Run the site analyser
-        site_info = analyse_site(url, wait_seconds=config.PAGE_LOAD_WAIT_SECONDS)
+        site_info = analyse_site(url, wait_seconds=PAGE_LOAD_WAIT_SECONDS)
         
         # Compile Scrape Config (No interactive prompts here, fully automated based on DB config!)
         parsed_config = ScrapeConfig(
@@ -755,28 +932,50 @@ def run_scraper_frappe(config_name):
                 active_providers.append({
                     "provider_name": row.provider_name,
                     "model_name": row.model_name,
-                    "api_key": row.get_password('api_key') or row.api_key
+                    "api_key": row.get_password('api_key') or row.api_key,
+                    "daily_limit": row.daily_limit or 100_000,
+                    "max_content_chars": row.max_content_chars or MAX_CONTENT_CHARS,
                 })
                 
         if not active_providers:
             log_to_frappe(config_name, "❌ Fatal Error: No active providers configured in Universal Crawler Settings!")
             return
+
+        # Log the provider chain for transparency
+        chain = " → ".join(
+            f"{p['provider_name']}({p['model_name']}, {p['max_content_chars']}chars)"
+            for p in active_providers
+        )
+        print(f"🔗 LLM Provider chain: {chain}")
+        print(f"   (will auto-failover to next provider on errors)\n")
             
-        tracker = RateLimitTracker(providers=active_providers)
+        tracker = FrappeDBTracker(providers=active_providers)
     
         # 3. Crawl all pages according to limits!
-        pages = fetch_all_pages(url, parsed_config, wait_seconds=config.PAGE_LOAD_WAIT_SECONDS)
+        pages = fetch_all_pages(url, parsed_config, wait_seconds=PAGE_LOAD_WAIT_SECONDS)
         
         # 4. Extract Data with dynamic LLM Fallbacks and save immediately!
         for page_text, page_title, page_url in pages:
-            grants, provider = extract_grants(page_text, page_url, tracker, active_providers)
+            grants, provider = extract_grants(
+                page_text, page_url, tracker, active_providers,
+                crawler_config=config_name
+            )
             
-            from .api import push_grant_to_frappe, update_credits_frappe
+            from .api import push_grant_to_frappe, update_credits_frappe, get_provider_credits
             for grant in grants:
                 push_grant_to_frappe(config_name, grant)
                 
-            # Stream the credit usage state!
-            update_credits_frappe(config_name, f"Status: {tracker.status_line()}")
+            # Build accurate credit display from database
+            try:
+                credits = get_provider_credits()
+                parts = []
+                for pname, info in credits.items():
+                    parts.append(f"{pname}: {info['used']}/{info['limit']} "
+                                 f"({info['remaining']} left)")
+                credit_str = "  |  ".join(parts) if parts else "No providers"
+                update_credits_frappe(config_name, credit_str)
+            except Exception:
+                update_credits_frappe(config_name, f"Status: {tracker.status_line()}")
             
     finally:
         builtins.print = original_print

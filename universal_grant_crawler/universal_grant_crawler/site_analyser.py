@@ -18,7 +18,6 @@ import math
 from dataclasses import dataclass
 from urllib.parse import urljoin, urlparse
 
-from . import config
 
 try:
     from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
@@ -216,7 +215,7 @@ def _detect_infinite_scroll(page) -> bool:
 # Main analyser
 # =============================================================================
 
-def analyse_site(url: str, wait_seconds: int = config.PAGE_LOAD_WAIT_SECONDS) -> SiteInfo:
+def analyse_site(url: str, wait_seconds: int = 4) -> SiteInfo:
     """
     Loads the page, detects site type, counts pages and items.
     Returns a SiteInfo. Also returns first page text so we don't reload it.
@@ -238,7 +237,7 @@ def analyse_site(url: str, wait_seconds: int = config.PAGE_LOAD_WAIT_SECONDS) ->
 
         try:
             page.goto(url, wait_until="networkidle",
-                      timeout=config.REQUEST_TIMEOUT * 1000)
+                      timeout=30_000)
         except PWTimeout:
             print("  ⚠  Page load timed out — using partial content.")
 
@@ -396,7 +395,7 @@ def prompt_user(info: SiteInfo, wait: int) -> ScrapeConfig:
                     if info.items_per_page and max_items:
                         max_pages = math.ceil(max_items / info.items_per_page)
                     else:
-                        max_pages = config.MAX_PAGINATION_PAGES
+                        max_pages = 50
                     break
 
                 val = int(raw)
@@ -409,7 +408,7 @@ def prompt_user(info: SiteInfo, wait: int) -> ScrapeConfig:
                     max_pages = math.ceil(val / info.items_per_page)
                     max_pages = max(1, max_pages)
                 else:
-                    max_pages = config.MAX_PAGINATION_PAGES
+                    max_pages = 50
                 break
 
             except ValueError:

@@ -9,16 +9,28 @@
   "provider_name",
   "model_name",
   "api_key",
+  "column_break_limits",
   "priority",
-  "active"
+  "active",
+  "daily_limit",
+  "max_content_chars"
  ],
  "fields": [
+  {
+   "fieldname": "provider_name",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Provider Name",
+   "options": "\nGroq\nGemini\nOpenAI\nAnthropic\nOllama\nTOGETHER AI\nFIREWORKS AI\nDeepSeek\nCohere\nAI21 Labs\nMISTRAL\nOPENROUTER",
+   "reqd": 1
+  },
   {
    "fieldname": "model_name",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Model Name",
-   "placeholder": "llama-3.3-70b-versatile"
+   "placeholder": "llama-3.3-70b-versatile",
+   "reqd": 1
   },
   {
    "fieldname": "api_key",
@@ -27,6 +39,12 @@
    "label": "API Key"
   },
   {
+   "fieldname": "column_break_limits",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "description": "Lower number = tried first (1 = highest priority)",
    "fieldname": "priority",
    "fieldtype": "Int",
    "in_list_view": 1,
@@ -37,21 +55,29 @@
    "fieldname": "active",
    "fieldtype": "Check",
    "in_list_view": 1,
-   "label": "active"
+   "label": "Active"
   },
   {
-   "fieldname": "provider_name",
-   "fieldtype": "Select",
+   "default": "14400",
+   "description": "Max API requests per day. Groq free=14400, Gemini free=1500",
+   "fieldname": "daily_limit",
+   "fieldtype": "Int",
    "in_list_view": 1,
-   "label": "Provider Name",
-   "options": "\nGroq\nGemini\nOpenAI\nAnthropic\nOllama"
+   "label": "Daily Request Limit"
+  },
+  {
+   "default": "10000",
+   "description": "Max chars of page content sent to this LLM. Reduce if hitting token limits.",
+   "fieldname": "max_content_chars",
+   "fieldtype": "Int",
+   "label": "Max Content Chars"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-04-07 16:42:11.184404",
+ "modified": "2026-04-09 17:47:55.937205",
  "modified_by": "Administrator",
  "module": "Universal Grant Crawler",
  "name": "Crawler LLM Provider",
