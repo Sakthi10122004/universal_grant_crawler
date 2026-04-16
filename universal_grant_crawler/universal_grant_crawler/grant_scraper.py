@@ -14,7 +14,7 @@ REQUEST_TIMEOUT        = 30      # Playwright page load timeout (seconds)
 MAX_CONTENT_CHARS      = 10_000  # Default max page text sent to LLM
 RETRY_ATTEMPTS         = 2
 RETRY_DELAY_SECONDS    = 3
-MAX_PAGINATION_PAGES   = 50
+MAX_PAGINATION_PAGES   = 500
 MAX_SCROLL_ATTEMPTS    = 30
 MAX_LOAD_MORE_CLICKS   = 20
 DEFAULT_OUTPUT_FILE    = "grants.json"
@@ -58,7 +58,7 @@ class FrappeDBTracker:
     def print_status(self) -> None:
         print(f"\n  📊 Daily usage → {self.status_line()}")
 
-from .site_analyser import analyse_site, prompt_user, ScrapeConfig
+from .site_analyser import analyse_site, ScrapeConfig
 
 try:
     from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
@@ -412,7 +412,11 @@ def fetch_all_pages(start_url: str, cfg: ScrapeConfig,
         unchanged_streak = 0
 
         while current_url and page_num <= cfg.max_pages:
-            print(f"\n  🌐 Page {page_num}/{cfg.max_pages}: {current_url}")
+            # Show a sensible progress label
+            if cfg.max_pages >= 99999:
+                print(f"\n  🌐 Page {page_num} (all pages): {current_url}")
+            else:
+                print(f"\n  🌐 Page {page_num}/{cfg.max_pages}: {current_url}")
 
             if page_num == 1:
                 try:
@@ -836,7 +840,12 @@ def scrape_and_save(url: str, output: str, append: bool,
     if cfg is None:
         try:
             site_info = analyse_site(url, wait_seconds=wait)
-            cfg       = prompt_user(site_info, wait)
+            cfg = ScrapeConfig(
+                max_pages=50,
+                max_items=0,
+                enable_scroll=site_info.site_type in ("infinite_scroll", "single_page"),
+                site_info=site_info
+            )
         except Exception as e:
             print(f"  ❌ Site analysis failed: {e}")
             return False
@@ -897,6 +906,7 @@ def run_scraper_frappe(config_name):
     # 1. Get Crawler Config Document
     cfg_doc = frappe.get_doc("Crawler Config", config_name)
     url = cfg_doc.start_url
+    crawl_mode = getattr(cfg_doc, 'crawl_mode', 'Specific Pages') or 'Specific Pages'
     max_pages = cfg_doc.max_pages or 10
     
     # 2. Get Single Settings Document
@@ -925,6 +935,18 @@ def run_scraper_frappe(config_name):
         # Run the site analyser
         site_info = analyse_site(url, wait_seconds=PAGE_LOAD_WAIT_SECONDS)
         
+        # ── Resolve max_pages based on crawl_mode ────────────────────────────
+        if crawl_mode == "All Pages":
+            # Use the detected total pages if available, otherwise a very
+            # large number so the crawler keeps going until pagination ends.
+            if site_info.total_pages and site_info.total_pages > 0:
+                max_pages = site_info.total_pages
+            else:
+                max_pages = 99999   # effectively unlimited; stops when no next page is found
+            pages_label = f"ALL ({max_pages})" if site_info.total_pages else "ALL (until no more pages)"
+        else:
+            pages_label = str(max_pages)
+        
         # Compile Scrape Config (No interactive prompts here, fully automated based on DB config!)
         parsed_config = ScrapeConfig(
             max_pages=max_pages,
@@ -949,8 +971,9 @@ def run_scraper_frappe(config_name):
         else:
             print(f"🗂  Site type  : Static / Standard")
         print("──────────────────────────────────────────────────────\n")
-        print(f"✅ Will scrape up to {parsed_config.max_pages} pages/items based on Crawler Config\n")
-        print(f"🚀 Starting crawl — {max_pages} page(s)...\n")
+        print(f"🔧 Crawl mode  : {crawl_mode}")
+        print(f"✅ Will scrape up to {pages_label} pages based on Crawler Config\n")
+        print(f"🚀 Starting crawl — {pages_label} page(s)...\n")
         
         # Prepare dynamic configuration from Frappe Database
         active_providers = []
@@ -982,16 +1005,46 @@ def run_scraper_frappe(config_name):
         pages = fetch_all_pages(url, parsed_config, wait_seconds=PAGE_LOAD_WAIT_SECONDS)
         
         # 4. Extract Data with dynamic LLM Fallbacks and save immediately!
-        for page_text, page_title, page_url in pages:
+        from .api import push_grant_to_frappe, update_credits_frappe, get_provider_credits
+
+        total_extracted = 0
+        total_saved = 0
+        total_updated = 0
+        total_skipped = 0
+        total_expired = 0
+
+        for page_idx, (page_text, page_title, page_url) in enumerate(pages, 1):
             grants, provider = extract_grants(
                 page_text, page_url, tracker, active_providers,
                 crawler_config=config_name
             )
-            
-            from .api import push_grant_to_frappe, update_credits_frappe, get_provider_credits
+
+            page_saved = 0
+            page_updated = 0
+            page_skipped = 0
+            page_expired = 0
             for grant in grants:
-                push_grant_to_frappe(config_name, grant)
-                
+                result = push_grant_to_frappe(config_name, grant)
+                if result == "saved":
+                    page_saved += 1
+                elif result == "updated":
+                    page_updated += 1
+                elif result == "expired":
+                    page_expired += 1
+                else:
+                    page_skipped += 1
+
+            total_extracted += len(grants)
+            total_saved += page_saved
+            total_updated += page_updated
+            total_skipped += page_skipped
+            total_expired += page_expired
+
+            print(f"\n  📊 Page {page_idx}/{len(pages)} summary: "
+                  f"{len(grants)} extracted, {page_saved} saved, {page_updated} updated, "
+                  f"{page_skipped} skipped, "
+                  f"{page_expired} expired")
+
             # Build accurate credit display from database
             try:
                 credits = get_provider_credits()
@@ -1003,6 +1056,18 @@ def run_scraper_frappe(config_name):
                 update_credits_frappe(config_name, credit_str)
             except Exception:
                 update_credits_frappe(config_name, f"Status: {tracker.status_line()}")
+
+        # Final summary
+        print(f"\n{'═' * 54}")
+        print(f"  📈 CRAWL COMPLETE — FINAL SUMMARY")
+        print(f"{'═' * 54}")
+        print(f"  📄 Pages crawled   : {len(pages)}")
+        print(f"  🤖 Grants extracted: {total_extracted}")
+        print(f"  💾 Grants saved    : {total_saved}")
+        print(f"  🔄 Grants updated  : {total_updated}")
+        print(f"  ⏭  Skipped errors  : {total_skipped}")
+        print(f"  ⏳ Expired (skipped): {total_expired}")
+        print(f"{'═' * 54}")
             
     finally:
         builtins.print = original_print

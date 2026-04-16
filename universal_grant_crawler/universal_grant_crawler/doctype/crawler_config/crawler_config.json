@@ -6,6 +6,7 @@
  "engine": "InnoDB",
  "field_order": [
   "start_url",
+  "crawl_mode",
   "max_pages",
   "status",
   "logs",
@@ -18,10 +19,19 @@
    "label": "Start URL"
   },
   {
+   "default": "Specific Pages",
+   "fieldname": "crawl_mode",
+   "fieldtype": "Select",
+   "label": "Crawl Mode",
+   "options": "Specific Pages\nAll Pages"
+  },
+  {
    "default": "10",
+   "depends_on": "eval:doc.crawl_mode=='Specific Pages'",
    "fieldname": "max_pages",
    "fieldtype": "Int",
-   "label": "Max Pages"
+   "label": "Max Pages",
+   "mandatory_depends_on": "eval:doc.crawl_mode=='Specific Pages'"
   },
   {
    "default": "Queued",
@@ -45,7 +55,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-04-13 16:33:51.414803",
+ "modified": "2026-04-15 15:15:00.000000",
  "modified_by": "Administrator",
  "module": "Universal Grant Crawler",
  "name": "Crawler Config",

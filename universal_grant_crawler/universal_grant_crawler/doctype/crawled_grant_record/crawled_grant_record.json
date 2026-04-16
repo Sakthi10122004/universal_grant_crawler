@@ -10,9 +10,12 @@
   "title",
   "organization",
   "grant_amount",
+  "thematic_area",
+  "status",
   "deadline",
   "country",
   "source_url",
+  "visit_source",
   "description"
  ],
  "fields": [
@@ -25,6 +28,7 @@
   {
    "fieldname": "title",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Title",
    "length": 500,
    "unique": 1
@@ -32,12 +36,28 @@
   {
    "fieldname": "organization",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Organization"
   },
   {
    "fieldname": "grant_amount",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Grant Amount"
+  },
+  {
+   "fieldname": "thematic_area",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Thematic Area"
+  },
+  {
+   "default": "Active",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Active\nExpired"
   },
   {
    "fieldname": "deadline",
@@ -52,8 +72,14 @@
   {
    "fieldname": "source_url",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Source URL",
    "length": 900
+  },
+  {
+   "fieldname": "visit_source",
+   "fieldtype": "Button",
+   "label": "Visit Source URL"
   },
   {
    "fieldname": "description",
@@ -64,7 +90,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-04-09 11:42:34.197486",
+ "modified": "2026-04-15 14:52:00.000000",
  "modified_by": "Administrator",
  "module": "Universal Grant Crawler",
  "name": "Crawled Grant Record",

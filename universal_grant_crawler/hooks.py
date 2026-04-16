@@ -148,23 +148,12 @@ app_license = "mit"
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {
-# 	"all": [
-# 		"universal_grant_crawler.tasks.all"
-# 	],
-# 	"daily": [
-# 		"universal_grant_crawler.tasks.daily"
-# 	],
-# 	"hourly": [
-# 		"universal_grant_crawler.tasks.hourly"
-# 	],
-# 	"weekly": [
-# 		"universal_grant_crawler.tasks.weekly"
-# 	],
-# 	"monthly": [
-# 		"universal_grant_crawler.tasks.monthly"
-# 	],
-# }
+scheduler_events = {
+	"daily": [
+		"universal_grant_crawler.universal_grant_crawler.tasks.recheck_grant_statuses",
+		"universal_grant_crawler.universal_grant_crawler.tasks.delete_expired_grants",
+	],
+}
 
 # Testing
 # -------
