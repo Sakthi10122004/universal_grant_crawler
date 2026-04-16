@@ -207,8 +207,8 @@ def analyse_site(url: str, wait_seconds: int = 4) -> SiteInfo:
     Loads the page, detects site type, counts pages and items.
     Returns a SiteInfo. Also returns first page text so we don't reload it.
     """
-    print(f"\n  🔬 Analysing site: {url}")
-    print("  ⏳ Loading page...")
+    print(f"\n  [ANALYSIS] Analysing site: {url}")
+    print("  [WAIT] Loading page...")
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -226,7 +226,7 @@ def analyse_site(url: str, wait_seconds: int = 4) -> SiteInfo:
             page.goto(url, wait_until="networkidle",
                       timeout=30_000)
         except PWTimeout:
-            print("  ⚠  Page load timed out — using partial content.")
+            print("  [WARN] Page load timed out — using partial content.")
 
         page.wait_for_timeout(wait_seconds * 1000)
         title = page.title()

@@ -39,7 +39,7 @@ def execute_crawl(config_name):
         existing = frappe.db.get_value("Crawler Config", config_name, "logs") or ""
         frappe.db.set_value("Crawler Config", config_name, {
             "status": "Failed",
-            "logs": existing + "\n\n❌ FATAL ERROR:\n" + error_trace
+            "logs": existing + "\n\n[ERROR] FATAL ERROR:\n" + error_trace
         })
     finally:
         frappe.db.commit()
@@ -67,7 +67,7 @@ def push_grant_to_frappe(config_name, grant):
 
     # Skip saving expired grants entirely
     if status == "Expired":
-        print(f"  ⏭  Skipping expired grant: {title} (deadline: {deadline_str})")
+        print(f"  [SKIP] Skipping expired grant: {title} (deadline: {deadline_str})")
         return "expired"
 
     # Check if a record with this exact title already exists
@@ -90,11 +90,11 @@ def push_grant_to_frappe(config_name, grant):
             doc.source_url = source_url_val
             doc.save(ignore_permissions=True)
             frappe.db.commit()
-            print(f"  🔄 Updated: {title}")
+            print(f"  [UPDATE] Updated: {title}")
             return "updated"
         except Exception:
             frappe.clear_last_message()
-            print(f"  ⚠  Failed to update: {title}")
+            print(f"  [WARN] Failed to update: {title}")
             return "skipped"
     else:
         try:
@@ -113,12 +113,12 @@ def push_grant_to_frappe(config_name, grant):
             })
             doc.insert(ignore_permissions=True)
             frappe.db.commit()
-            print(f"  💾 Saved: {title}")
+            print(f"  [SAVE] Saved: {title}")
             return "saved"
         except frappe.UniqueValidationError:
             # Race condition: another worker inserted between our check and insert
             frappe.clear_last_message()
-            print(f"  ⏭  Skipping duplicate (race): {title}")
+            print(f"  [SKIP] Skipping duplicate (race): {title}")
             return "skipped"
 
 

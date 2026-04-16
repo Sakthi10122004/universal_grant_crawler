@@ -56,7 +56,7 @@ class FrappeDBTracker:
             return "Frappe DB Tracking Mode"
 
     def print_status(self) -> None:
-        print(f"\n  📊 Daily usage → {self.status_line()}")
+        print(f"\n  [USAGE] Daily usage -> {self.status_line()}")
 
 from .site_analyser import analyse_site, ScrapeConfig
 
@@ -224,21 +224,21 @@ def handle_infinite_scroll(page, wait_seconds: int, max_items: int, items_per_pa
     no_change_streak = 0
     scrolls          = 0
 
-    print("  📜 Infinite scroll: loading content...")
+    print("  [SCROLL] Infinite scroll: loading content...")
 
     while scrolls < max_scrolls:
         # Stop early if we've loaded enough items
         if max_items and items_per_page:
             pages_needed = (max_items + items_per_page - 1) // items_per_page
             if scrolls >= pages_needed:
-                print(f"  📜 Loaded enough content for {max_items} items.")
+                print(f"  [SCROLL] Loaded enough content for {max_items} items.")
                 break
 
         curr_height = page.evaluate("() => document.body.scrollHeight")
         if curr_height == prev_height:
             no_change_streak += 1
             if no_change_streak >= 3:
-                print(f"  📜 No new content — done scrolling.")
+                print(f"  [SCROLL] No new content — done scrolling.")
                 break
         else:
             no_change_streak = 0
@@ -264,7 +264,7 @@ def handle_load_more(page, wait_seconds: int, max_clicks: int = None) -> bool:
             try:
                 btn = page.locator(sel).first
                 if btn.is_visible(timeout=800) and btn.is_enabled():
-                    print(f"  🔘 Load more #{i+1}...")
+                    print(f"  [LOAD] Load more #{i+1}...")
                     btn.scroll_into_view_if_needed()
                     page.wait_for_timeout(400)
                     btn.click()
@@ -282,7 +282,7 @@ def handle_load_more(page, wait_seconds: int, max_clicks: int = None) -> bool:
             break
 
     if found_any:
-        print("  ✔  Load-more done.")
+        print("  [OK] Load-more done.")
     return found_any
 
 
@@ -308,7 +308,7 @@ def advance_to_next_page(page, wait_seconds: int, start_url: str = None) -> bool
             if not el.is_visible(timeout=500):
                 continue
 
-            print(f"  ➡  Next page [{label}] clicked.")
+            print(f"  [NEXT] Next page [{label}] clicked.")
             el.scroll_into_view_if_needed()
             page.wait_for_timeout(300)
             el.click(timeout=3000)
@@ -327,7 +327,7 @@ def advance_to_next_page(page, wait_seconds: int, start_url: str = None) -> bool
                 # Accept if the new path starts with the listing base path
                 # (e.g. /search?page=2 is fine; /opportunity/abc-123 is not).
                 if not after_path.startswith(listing_path) and after_path != listing_path:
-                    print(f"  ⚠  Selector [{label}] navigated to a detail page "
+                    print(f"  [WARN] Selector [{label}] navigated to a detail page "
                           f"({url_after}) — going back and trying next selector.")
                     try:
                         page.go_back()
@@ -340,7 +340,7 @@ def advance_to_next_page(page, wait_seconds: int, start_url: str = None) -> bool
                 return True
 
             # URL didn't change — selector may have matched a disabled button; continue
-            print(f"  ⚠  Selector [{label}] clicked but URL unchanged — skipping.")
+            print(f"  [WARN] Selector [{label}] clicked but URL unchanged — skipping.")
 
         except Exception:
             continue
@@ -362,7 +362,7 @@ def advance_to_next_page(page, wait_seconds: int, start_url: str = None) -> bool
             return false;
         }""")
         if clicked:
-            print(f"  ➡  Next page [numbered] clicked.")
+            print(f"  [NEXT] Next page [numbered] clicked.")
             page.wait_for_timeout(wait_seconds * 1000)
             try:
                 page.wait_for_load_state("networkidle", timeout=3000)
@@ -414,16 +414,16 @@ def fetch_all_pages(start_url: str, cfg: ScrapeConfig,
         while current_url and page_num <= cfg.max_pages:
             # Show a sensible progress label
             if cfg.max_pages >= 99999:
-                print(f"\n  🌐 Page {page_num} (all pages): {current_url}")
+                print(f"\n  [PAGE] Page {page_num} (all pages): {current_url}")
             else:
-                print(f"\n  🌐 Page {page_num}/{cfg.max_pages}: {current_url}")
+                print(f"\n  [PAGE] Page {page_num}/{cfg.max_pages}: {current_url}")
 
             if page_num == 1:
                 try:
                     page.goto(current_url, wait_until="networkidle",
                               timeout=REQUEST_TIMEOUT * 1000)
                 except PWTimeout:
-                    print("  ⚠  Timed out — partial content.")
+                    print("  [WARN] Timed out — partial content.")
                 page.wait_for_timeout(wait_seconds * 1000)
                 title = first_page_title
             else:
@@ -441,40 +441,40 @@ def fetch_all_pages(start_url: str, cfg: ScrapeConfig,
 
             if text == last_text:
                 unchanged_streak += 1
-                print(f"  ⚠  Content unchanged (streak {unchanged_streak}/2) — "
+                print(f"  [WARN] Content unchanged (streak {unchanged_streak}/2) — "
                       f"may be SPA end of pagination.")
                 if unchanged_streak >= 2:
-                    print("  🛑 Content unchanged twice in a row — stopping.")
+                    print("  [STOP] Content unchanged twice in a row — stopping.")
                     break
             else:
                 unchanged_streak = 0
             last_text = text
 
             results.append((text, title, current_url))
-            print(f"  ✔  Captured: '{title}' ({len(text):,} chars)")
+            print(f"  [DONE] Captured: '{title}' ({len(text):,} chars)")
 
             # Check item limit
             if cfg.max_items and cfg.site_info.items_per_page:
                 total_items_seen += cfg.site_info.items_per_page
                 if total_items_seen >= cfg.max_items:
-                    print(f"  🛑 Item limit reached ({cfg.max_items}).")
+                    print(f"  [STOP] Item limit reached ({cfg.max_items}).")
                     break
 
             # Next page
             if page_num < cfg.max_pages and cfg.site_info.site_type == "paginated":
                 success = advance_to_next_page(page, wait_seconds, start_url=start_url)
                 if not success:
-                    print(f"  🛑 Could not find next page link.")
+                    print(f"  [STOP] Could not find next page link.")
                     break
             elif page_num >= cfg.max_pages:
-                print(f"  🛑 Page limit reached ({cfg.max_pages}).")
+                print(f"  [STOP] Page limit reached ({cfg.max_pages}).")
 
             page_num += 1
             current_url = page.url
 
         browser.close()
 
-    print(f"\n  📄 Pages crawled: {len(results)}")
+    print(f"\n  [SUMMARY] Pages crawled: {len(results)}")
     return results
 
 
@@ -526,7 +526,7 @@ def extract_with_provider(text: str, url: str, p: dict, max_chars: int = None) -
     if name == "groq":
         from groq import Groq
         client = Groq(api_key=p["api_key"])
-        print(f"  🤖 Groq ({p['model_name']}): extracting ({char_limit} chars)...")
+        print(f"  [AI] Groq ({p['model_name']}): extracting ({char_limit} chars)...")
         resp = client.chat.completions.create(
             model=p["model_name"],
             messages=[{"role": "user", "content": prompt}],
@@ -537,14 +537,14 @@ def extract_with_provider(text: str, url: str, p: dict, max_chars: int = None) -
     elif name == "gemini":
         from google import genai
         client = genai.Client(api_key=p["api_key"])
-        print(f"  🤖 Gemini ({p['model_name']}): extracting ({char_limit} chars)...")
+        print(f"  [AI] Gemini ({p['model_name']}): extracting ({char_limit} chars)...")
         resp = client.models.generate_content(model=p["model_name"], contents=prompt)
         return _parse_llm_response(resp.text, url)
         
     elif name == "openai" or name == "anthropic":
         from openai import OpenAI
         client = OpenAI(api_key=p["api_key"])
-        print(f"  🤖 {p['provider_name']} ({p['model_name']}): extracting ({char_limit} chars)...")
+        print(f"  [AI] {p['provider_name']} ({p['model_name']}): extracting ({char_limit} chars)...")
         resp = client.chat.completions.create(
             model=p["model_name"],
             messages=[{"role": "user", "content": prompt}],
@@ -554,7 +554,7 @@ def extract_with_provider(text: str, url: str, p: dict, max_chars: int = None) -
         
     elif name == "ollama":
         import requests
-        print(f"  🤖 Ollama ({p['model_name']}): extracting locally ({char_limit} chars)...")
+        print(f"  [AI] Ollama ({p['model_name']}): extracting locally ({char_limit} chars)...")
         resp = requests.post("http://localhost:11434/api/chat", json={
             "model": p["model_name"],
             "messages": [{"role": "user", "content": prompt}],
@@ -564,7 +564,7 @@ def extract_with_provider(text: str, url: str, p: dict, max_chars: int = None) -
         return _parse_llm_response(resp.json()["message"]["content"], url)
         
     else:
-        print(f"  ⚠  Unknown provider type: {name}")
+        print(f"  [WARN] Unknown provider type: {name}")
         return []
 
 
@@ -591,7 +591,7 @@ def extract_grants(page_text: str, url: str, tracker: 'FrappeDBTracker',
     Every API call (success or failure) is logged to LLM Usage Log DocType.
     """
     if not providers:
-        print("  ❌ No LLM providers configured!")
+        print("  [ERROR] No LLM providers configured!")
         return [], "none"
 
     # Import usage logger (only available inside Frappe context)
@@ -606,7 +606,7 @@ def extract_grants(page_text: str, url: str, tracker: 'FrappeDBTracker',
 
     for attempt in range(1, RETRY_ATTEMPTS + 1):
         if attempt > 1:
-            print(f"  🔁 Retry attempt {attempt}/{RETRY_ATTEMPTS} — trying all providers again...")
+            print(f"  [RETRY] Retry attempt {attempt}/{RETRY_ATTEMPTS} — trying all providers again...")
             time.sleep(RETRY_DELAY_SECONDS)
 
         for p in providers:
@@ -618,7 +618,7 @@ def extract_grants(page_text: str, url: str, tracker: 'FrappeDBTracker',
 
             # Skip providers that hit their daily rate limit
             if not tracker.can_use(prov_name):
-                print(f"  ⚡ {prov_name} daily limit reached, skipping.")
+                print(f"  [LIMIT] {prov_name} daily limit reached, skipping.")
                 if _log_usage:
                     _log_usage(prov_name, p.get("model_name", ""), "Rate Limited",
                                crawler_config=crawler_config, page_url=url)
@@ -634,7 +634,7 @@ def extract_grants(page_text: str, url: str, tracker: 'FrappeDBTracker',
 
                 if grants:
                     tracker.increment(prov_name)
-                    print(f"  ✔  {prov_name}: {len(grants)} grant(s) extracted. ({elapsed_ms}ms)")
+                    print(f"  [OK] {prov_name}: {len(grants)} grant(s) extracted. ({elapsed_ms}ms)")
                     if _log_usage:
                         _log_usage(prov_name, p.get("model_name", ""), "Success",
                                    crawler_config=crawler_config, page_url=url,
@@ -643,7 +643,7 @@ def extract_grants(page_text: str, url: str, tracker: 'FrappeDBTracker',
                                    response_time_ms=elapsed_ms)
                     return grants, prov_name
                 else:
-                    print(f"  ⚠  {prov_name}: returned empty, trying next provider...")
+                    print(f"  [WARN] {prov_name}: returned empty, trying next provider...")
                     if _log_usage:
                         _log_usage(prov_name, p.get("model_name", ""), "Failed",
                                    crawler_config=crawler_config, page_url=url,
@@ -653,7 +653,7 @@ def extract_grants(page_text: str, url: str, tracker: 'FrappeDBTracker',
 
             except Exception as e:
                 elapsed_ms = int((time.time() - t_start) * 1000)
-                print(f"  ⚠  {prov_name} Error: {e}")
+                print(f"  [WARN] {prov_name} Error: {e}")
 
                 # ── Handle content-too-large: reduce and retry once ──
                 if _is_content_too_large_error(e):
@@ -665,7 +665,7 @@ def extract_grants(page_text: str, url: str, tracker: 'FrappeDBTracker',
                                    error_message=str(e)[:500])
 
                     reduced_chars = max(2000, max_chars // 2)
-                    print(f"  📏 Content too large for {prov_name}. "
+                    print(f"  [SIZE] Content too large for {prov_name}. "
                           f"Retrying with {reduced_chars} chars (was {max_chars})...")
                     t2 = time.time()
                     try:
@@ -673,7 +673,7 @@ def extract_grants(page_text: str, url: str, tracker: 'FrappeDBTracker',
                         elapsed_ms2 = int((time.time() - t2) * 1000)
                         if grants:
                             tracker.increment(prov_name)
-                            print(f"  ✔  {prov_name}: {len(grants)} grant(s) (reduced content, {elapsed_ms2}ms).")
+                            print(f"  [OK] {prov_name}: {len(grants)} grant(s) (reduced content, {elapsed_ms2}ms).")
                             if _log_usage:
                                 _log_usage(prov_name, p.get("model_name", ""), "Success",
                                            crawler_config=crawler_config, page_url=url,
@@ -683,7 +683,7 @@ def extract_grants(page_text: str, url: str, tracker: 'FrappeDBTracker',
                             return grants, prov_name
                     except Exception as e2:
                         elapsed_ms2 = int((time.time() - t2) * 1000)
-                        print(f"  ⚠  {prov_name} still failed after reducing content: {e2}")
+                        print(f"  [WARN] {prov_name} still failed after reducing content: {e2}")
                         permanently_failed.add(prov_name)
                         if _log_usage:
                             _log_usage(prov_name, p.get("model_name", ""), "Failed",
@@ -701,11 +701,11 @@ def extract_grants(page_text: str, url: str, tracker: 'FrappeDBTracker',
                                    error_message=str(e)[:500])
 
                 # Always try the next provider after any error
-                print(f"  ➡  Switching to next provider...")
+                print(f"  [NEXT] Switching to next provider...")
                 continue
 
     # All attempts exhausted
-    print(f"  ❌ All {len(providers)} configured provider(s) failed. "
+    print(f"  [ERROR] All {len(providers)} configured provider(s) failed. "
           f"No grants extracted from this page.")
     return [], "none"
 
@@ -722,11 +722,11 @@ def deduplicate_grants(grants: list, max_items: int = 0) -> list:
             seen.add(key)
             unique.append(g)
             if max_items and len(unique) >= max_items:
-                print(f"  🛑 Reached requested item limit ({max_items}).")
+                print(f"  [STOP] Reached requested item limit ({max_items}).")
                 break
     removed = len(grants) - len(unique)
     if removed:
-        print(f"  🔁 Removed {removed} duplicate(s).")
+        print(f"  [DEDUPE] Removed {removed} duplicate(s).")
     return unique
 
 
@@ -745,22 +745,22 @@ def queue_url(url: str, output: str, append: bool) -> None:
         queue.append({"url": url, "output": output, "append": append,
                       "queued_at": datetime.now().isoformat()})
         QUEUE_FILE.write_text(json.dumps(queue, indent=2))
-        print(f"  📋 Queued for next run → {QUEUE_FILE}")
+        print(f"  [QUEUE] Queued for next run → {QUEUE_FILE}")
 
 
 def process_queue(tracker: 'FrappeDBTracker', output: str, append: bool, wait: int) -> None:
     if not QUEUE_FILE.exists():
-        print("  ℹ  No retry queue found.")
+        print("  [INFO] No retry queue found.")
         return
     try:
         queue = json.loads(QUEUE_FILE.read_text())
     except json.JSONDecodeError:
-        print("  ⚠  Queue corrupted.")
+        print("  [WARN] Queue corrupted.")
         return
     if not queue:
-        print("  ℹ  Queue is empty.")
+        print("  [INFO] Queue is empty.")
         return
-    print(f"\n  📋 Processing {len(queue)} queued URL(s)...\n")
+    print(f"\n  [QUEUE] Processing {len(queue)} queued URL(s)...\n")
     remaining = []
     for item in queue:
         print(f"  ─── {item['url']}")
@@ -769,9 +769,9 @@ def process_queue(tracker: 'FrappeDBTracker', output: str, append: bool, wait: i
         if not ok:
             remaining.append(item)
     QUEUE_FILE.write_text(json.dumps(remaining, indent=2))
-    print(f"\n  ✅ Done {len(queue)-len(remaining)}/{len(queue)}.")
+    print(f"\n  [OK] Done {len(queue)-len(remaining)}/{len(queue)}.")
     if remaining:
-        print(f"  📋 {len(remaining)} still queued.")
+        print(f"  [QUEUE] {len(remaining)} still queued.")
 
 
 # =============================================================================
@@ -784,13 +784,13 @@ def print_grants(grants: list, provider: str) -> None:
         print(f"\n{sep}")
         print(f"  Grant #{i}  [via {provider}]")
         print(sep)
-        print(f"  📌 Title        : {g.get('title','N/A')}")
-        print(f"  🏢 Organization : {g.get('organization','N/A')}")
-        print(f"  💰 Funding      : {g.get('funding_amount','N/A')}")
-        print(f"  🎯 Theme        : {g.get('thematic_area','N/A')}")
-        print(f"  📅 Deadline     : {g.get('deadline','N/A')}")
-        print(f"  🌍 Country      : {g.get('country','N/A')}")
-        print(f"  🔗 Source URL   : {g.get('source_url','N/A')}")
+        print(f"  Title        : {g.get('title','N/A')}")
+        print(f"  Organization : {g.get('organization','N/A')}")
+        print(f"  Funding      : {g.get('funding_amount','N/A')}")
+        print(f"  Theme        : {g.get('thematic_area','N/A')}")
+        print(f"  Deadline     : {g.get('deadline','N/A')}")
+        print(f"  Country      : {g.get('country','N/A')}")
+        print(f"  Source URL   : {g.get('source_url','N/A')}")
         desc = g.get("short_description", "N/A")
         words = desc.split()
         lines, line = [], []
@@ -800,9 +800,9 @@ def print_grants(grants: list, provider: str) -> None:
                 lines.append("                 " + " ".join(line)); line = []
         if line:
             lines.append("                 " + " ".join(line))
-        print("  📝 Description  :\n" + "\n".join(lines))
+        print("  Description  :\n" + "\n".join(lines))
     print(f"\n{sep}")
-    print(f"  ✅ {len(grants)} grant(s) via {provider}")
+    print(f"  [DONE] {len(grants)} grant(s) via {provider}")
     print(sep)
 
 
@@ -819,7 +819,7 @@ def save_grants(grants: list, path: str, append: bool) -> None:
     all_grants = (load_existing_grants(path) if append else []) + grants
     with open(path, "w", encoding="utf-8") as f:
         json.dump(all_grants, f, ensure_ascii=False, indent=2)
-    print(f"  💾 Saved {len(all_grants)} total → {path}")
+    print(f"  [SAVE] Saved {len(all_grants)} total → {path}")
 
 
 # =============================================================================
@@ -832,7 +832,7 @@ def scrape_and_save(url: str, output: str, append: bool,
     """Full pipeline: analyse → user prompt → crawl → extract → dedup → save."""
 
     if not tracker.any_available():
-        print("  🚫 All provider limits exhausted.")
+        print("  [LIMIT] All provider limits exhausted.")
         queue_url(url, output, append)
         return False
 
@@ -847,48 +847,48 @@ def scrape_and_save(url: str, output: str, append: bool,
                 site_info=site_info
             )
         except Exception as e:
-            print(f"  ❌ Site analysis failed: {e}")
+            print(f"  [ERROR] Site analysis failed: {e}")
             return False
 
-    print(f"\n  🚀 Starting crawl — {cfg.max_pages} page(s), "
+    print(f"\n  [START] Starting crawl — {cfg.max_pages} page(s), "
           f"up to {cfg.max_items or 'all'} grants...\n")
 
     # ── Crawl ─────────────────────────────────────────────────────────────────
     try:
         pages = fetch_all_pages(url, cfg, wait_seconds=wait)
     except Exception as e:
-        print(f"  ❌ Crawl failed: {e}")
+        print(f"  [ERROR] Crawl failed: {e}")
         return False
 
     if not pages:
-        print("  ⚠  No pages fetched.")
+        print("  [WARN] No pages fetched.")
         return False
 
     # ── Extract ───────────────────────────────────────────────────────────────
     all_grants, last_provider = [], "none"
 
     for page_text, page_title, page_url in pages:
-        print(f"\n  🔎 Extracting: {page_url}")
+        print(f"\n  [SEARCH] Extracting: {page_url}")
         if not tracker.any_available():
-            print("  🚫 All provider limits hit mid-crawl — queuing remaining.")
+            print("  [LIMIT] All provider limits hit mid-crawl — queuing remaining.")
             queue_url(page_url, output, True)
             continue
         grants, provider = extract_grants(page_text, page_url, tracker, getattr(cfg, 'providers', []))
         if grants:
             all_grants.extend(grants)
             last_provider = provider
-            print(f"  ✔  {len(grants)} grant(s) on this page.")
+            print(f"  [OK] {len(grants)} grant(s) on this page.")
         else:
-            print("  ⚠  No grants on this page.")
+            print("  [WARN] No grants on this page.")
 
     if not all_grants:
-        print("\n  ⚠  No grants extracted.")
+        print("\n  [WARN] No grants extracted.")
         return False
 
     # ── Dedup + cap at user-requested limit ───────────────────────────────────
-    print(f"\n  🔍 Before dedup : {len(all_grants)}")
+    print(f"\n  [SEARCH] Before dedup : {len(all_grants)}")
     all_grants = deduplicate_grants(all_grants, max_items=cfg.max_items)
-    print(f"  ✅ After dedup  : {len(all_grants)}")
+    print(f"  [OK] After dedup  : {len(all_grants)}")
 
     print_grants(all_grants, last_provider)
     save_grants(all_grants, output, append)
@@ -930,7 +930,7 @@ def run_scraper_frappe(config_name):
     builtins.print = frappe_print
     
     try:
-        log_to_frappe(config_name, f"🔬 Analysing site: {url}")
+        log_to_frappe(config_name, f"[ANALYSIS] Analysing site: {url}")
         
         # Run the site analyser
         site_info = analyse_site(url, wait_seconds=PAGE_LOAD_WAIT_SECONDS)
@@ -957,23 +957,23 @@ def run_scraper_frappe(config_name):
         
         # Print the beautiful UI summary directly to Frappe
         print("──────────────────────────────────────────────────────")
-        print("📊  Site Analysis Results")
+        print("  Site Analysis Results")
         print("──────────────────────────────────────────────────────")
-        print(f"🔗  URL        : {url}")
-        print(f"📌  Title      : {site_info.first_page_title}")
+        print(f"  URL        : {url}")
+        print(f"  Title      : {site_info.first_page_title}")
         if site_info.site_type == "paginated":
-            print(f"🗂  Site type  : Paginated")
-            print(f"📄  Total pages: {site_info.total_pages or 'Unknown'}")
-            print(f"📦  Total grants: ~{site_info.total_items or 'Unknown'}  (~{site_info.items_per_page or 'Unknown'} per page)")
+            print(f"  Site type  : Paginated")
+            print(f"  Total pages: {site_info.total_pages or 'Unknown'}")
+            print(f"  Total grants: ~{site_info.total_items or 'Unknown'}  (~{site_info.items_per_page or 'Unknown'} per page)")
         elif site_info.site_type in ("infinite_scroll", "single_page"):
-            print(f"🗂  Site type  : {site_info.site_type.replace('_',' ').title()}")
-            print(f"📦  Total grants available: ~{site_info.total_items or 'Unknown'}")
+            print(f"  Site type  : {site_info.site_type.replace('_',' ').title()}")
+            print(f"  Total grants available: ~{site_info.total_items or 'Unknown'}")
         else:
-            print(f"🗂  Site type  : Static / Standard")
+            print(f"  Site type  : Static / Standard")
         print("──────────────────────────────────────────────────────\n")
-        print(f"🔧 Crawl mode  : {crawl_mode}")
-        print(f"✅ Will scrape up to {pages_label} pages based on Crawler Config\n")
-        print(f"🚀 Starting crawl — {pages_label} page(s)...\n")
+        print(f"  Crawl mode  : {crawl_mode}")
+        print(f"  [OK] Will scrape up to {pages_label} pages based on Crawler Config\n")
+        print(f"  [START] Starting crawl — {pages_label} page(s)...\n")
         
         # Prepare dynamic configuration from Frappe Database
         active_providers = []
@@ -988,7 +988,7 @@ def run_scraper_frappe(config_name):
                 })
                 
         if not active_providers:
-            log_to_frappe(config_name, "❌ Fatal Error: No active providers configured in Universal Crawler Settings!")
+            log_to_frappe(config_name, "[ERROR] Fatal Error: No active providers configured in Universal Crawler Settings!")
             return
 
         # Log the provider chain for transparency
@@ -996,7 +996,7 @@ def run_scraper_frappe(config_name):
             f"{p['provider_name']}({p['model_name']}, {p['max_content_chars']}chars)"
             for p in active_providers
         )
-        print(f"🔗 LLM Provider chain: {chain}")
+        print(f"  LLM Provider chain: {chain}")
         print(f"   (will auto-failover to next provider on errors)\n")
             
         tracker = FrappeDBTracker(providers=active_providers)
@@ -1040,7 +1040,7 @@ def run_scraper_frappe(config_name):
             total_skipped += page_skipped
             total_expired += page_expired
 
-            print(f"\n  📊 Page {page_idx}/{len(pages)} summary: "
+            print(f"\n  [USAGE] Page {page_idx}/{len(pages)} summary: "
                   f"{len(grants)} extracted, {page_saved} saved, {page_updated} updated, "
                   f"{page_skipped} skipped, "
                   f"{page_expired} expired")
@@ -1058,16 +1058,16 @@ def run_scraper_frappe(config_name):
                 update_credits_frappe(config_name, f"Status: {tracker.status_line()}")
 
         # Final summary
-        print(f"\n{'═' * 54}")
-        print(f"  📈 CRAWL COMPLETE — FINAL SUMMARY")
-        print(f"{'═' * 54}")
-        print(f"  📄 Pages crawled   : {len(pages)}")
-        print(f"  🤖 Grants extracted: {total_extracted}")
-        print(f"  💾 Grants saved    : {total_saved}")
-        print(f"  🔄 Grants updated  : {total_updated}")
-        print(f"  ⏭  Skipped errors  : {total_skipped}")
-        print(f"  ⏳ Expired (skipped): {total_expired}")
-        print(f"{'═' * 54}")
+        print(f"\n{'=' * 54}")
+        print(f"  CRAWL COMPLETE — FINAL SUMMARY")
+        print(f"{'=' * 54}")
+        print(f"  Pages crawled   : {len(pages)}")
+        print(f"  Grants extracted: {total_extracted}")
+        print(f"  Grants saved    : {total_saved}")
+        print(f"  Grants updated  : {total_updated}")
+        print(f"  Skipped errors  : {total_skipped}")
+        print(f"  Expired (skipped): {total_expired}")
+        print(f"{'=' * 54}")
             
     finally:
         builtins.print = original_print
