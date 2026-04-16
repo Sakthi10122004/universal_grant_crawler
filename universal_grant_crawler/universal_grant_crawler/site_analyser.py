@@ -1,18 +1,3 @@
-"""
-site_analyser.py — Analyses a grant site before scraping.
-
-Detects:
-  - Site type: paginated | infinite-scroll | load-more | single-page
-  - Total pages available (for paginated sites)
-  - Estimated total grants/items available
-  - Grants per page
-
-Then interactively asks the user:
-  "X grants available across Y pages. How many do you want to scrape?"
-
-Returns a ScrapeConfig that the main scraper uses.
-"""
-
 import re
 import math
 from dataclasses import dataclass
@@ -89,13 +74,15 @@ def _count_total_pages(page, current_url: str) -> int:
     Tries multiple strategies to find the total page count.
     Returns 0 if unknown.
     """
-    # Strategy 1: last numbered page link
+    # Strategy 1: JS pagination number links
     try:
         count = page.evaluate("""() => {
-            const links = Array.from(document.querySelectorAll('a[href]'));
+            const links = Array.from(document.querySelectorAll('a[href], button'));
             const nums = links
-                .map(a => parseInt(a.innerText.trim()))
-                .filter(n => !isNaN(n) && n > 0);
+                .map(x => x.innerText.trim())
+                .filter(txt => /^\\d+$/.test(txt))  // strictly just digits
+                .map(txt => parseInt(txt, 10))
+                .filter(n => !isNaN(n) && n > 0 && n < 10000); // sanity limit
             return nums.length ? Math.max(...nums) : 0;
         }""")
         if count and count > 1:
@@ -107,11 +94,11 @@ def _count_total_pages(page, current_url: str) -> int:
     try:
         body = page.inner_text("body")
         patterns = [
-            r"page\s+\d+\s+of\s+(\d+)",
-            r"\d+\s*/\s*(\d+)\s*pages?",
-            r"showing\s+\d+[–\-]\d+\s+of\s+(\d+)",
-            r"(\d+)\s+pages?\s+total",
-            r"total\s+pages?:?\s*(\d+)",
+            r"page[ \t\xa0]+\d+[ \t\xa0]+of[ \t\xa0]+(\d+)",
+            r"\d+[ \t\xa0]*/[ \t\xa0]*(\d+)[ \t\xa0]*pages?",
+            r"showing[ \t\xa0]+\d+[–\-]\d+[ \t\xa0]+of[ \t\xa0]+(\d+)",
+            r"(\d+)[ \t\xa0]+pages?[ \t\xa0]+total",
+            r"total[ \t\xa0]+pages?:?[ \t\xa0]*(\d+)",
         ]
         for pat in patterns:
             m = re.search(pat, body, re.IGNORECASE)
@@ -150,15 +137,15 @@ def _count_total_items(page) -> int:
     try:
         body = page.inner_text("body")
         patterns = [
-            r"([\d,]+)\s+grants?",
-            r"([\d,]+)\s+results?",
-            r"([\d,]+)\s+opportunities",
-            r"([\d,]+)\s+funding",
-            r"([\d,]+)\s+awards?",
-            r"showing\s+\d+[–\-]\d+\s+of\s+([\d,]+)",
-            r"total[:\s]+([\d,]+)",
-            r"([\d,]+)\s+items?",
-            r"found\s+([\d,]+)",
+            r"([\d,]+)[ \t\xa0]+grants?",
+            r"([\d,]+)[ \t\xa0]+results?",
+            r"([\d,]+)[ \t\xa0]+opportunities",
+            r"([\d,]+)[ \t\xa0]+funding",
+            r"([\d,]+)[ \t\xa0]+awards?",
+            r"showing[ \t\xa0]+\d+[–\-]\d+[ \t\xa0]+of[ \t\xa0]+([\d,]+)",
+            r"total[: \t\xa0]+([\d,]+)",
+            r"([\d,]+)[ \t\xa0]+items?",
+            r"found[ \t\xa0]+([\d,]+)",
         ]
         for pat in patterns:
             m = re.search(pat, body, re.IGNORECASE)
@@ -307,118 +294,3 @@ def analyse_site(url: str, wait_seconds: int = 4) -> SiteInfo:
     return info
 
 
-# =============================================================================
-# Interactive prompt
-# =============================================================================
-
-def _print_divider():
-    print("  " + "─" * 54)
-
-
-def prompt_user(info: SiteInfo, wait: int) -> ScrapeConfig:
-    """
-    Prints a summary of what was found and asks the user
-    how much data they want to scrape. Returns a ScrapeConfig.
-    """
-    print()
-    _print_divider()
-    print(f"  📊  Site Analysis Results")
-    _print_divider()
-    print(f"  🔗  URL        : {info.page_url}")
-    print(f"  📌  Title      : {info.first_page_title}")
-    print(f"  🗂  Site type  : {info.site_type.replace('_', ' ').title()}")
-
-    if info.site_type == "paginated":
-        pages_label = str(info.total_pages) if info.total_pages else "Unknown"
-        items_label = f"~{info.total_items:,}" if info.total_items else "Unknown"
-        per_pg      = f"~{info.items_per_page}" if info.items_per_page else "Unknown"
-        print(f"  📄  Total pages: {pages_label}")
-        print(f"  📦  Total grants: {items_label}  ({per_pg} per page)")
-    else:
-        items_label = f"~{info.total_items:,}" if info.total_items else "Unknown"
-        print(f"  📦  Total grants available: {items_label}")
-
-    _print_divider()
-    print()
-
-    # ── Ask how much to scrape ────────────────────────────────────────────────
-    if info.site_type == "paginated" and info.total_pages:
-        # Ask for number of pages
-        while True:
-            try:
-                raw = input(
-                    f"  ❓ How many pages do you want to scrape? "
-                    f"[1–{info.total_pages}, or press Enter for all]: "
-                ).strip()
-                if raw == "":
-                    max_pages = info.total_pages
-                    break
-                val = int(raw)
-                if 1 <= val <= info.total_pages:
-                    max_pages = val
-                    break
-                print(f"  ⚠  Please enter a number between 1 and {info.total_pages}.")
-            except ValueError:
-                print("  ⚠  Please enter a valid number.")
-
-        # Estimate grants from chosen pages
-        max_items = (
-            max_pages * info.items_per_page if info.items_per_page else 0
-        )
-        estimated = f"~{max_items:,}" if max_items else "unknown number of"
-        print(f"\n  ✅ Will scrape {max_pages} page(s)  ({estimated} grants)")
-
-        return ScrapeConfig(
-            max_pages     = max_pages,
-            max_items     = max_items,
-            enable_scroll = False,
-            site_info     = info,
-        )
-
-    else:
-        # Infinite scroll / load-more / single page or unknown pages
-        # Ask for number of grants
-        total_label = f"{info.total_items:,}" if info.total_items else "an unknown number of"
-
-        while True:
-            try:
-                prompt_str = (
-                    f"  ❓ {total_label} grants available. "
-                    f"How many do you want to scrape? "
-                    f"[number, or Enter for all]: "
-                )
-                raw = input(prompt_str).strip()
-
-                if raw == "":
-                    max_items = info.total_items or 0
-                    # Estimate pages needed
-                    if info.items_per_page and max_items:
-                        max_pages = math.ceil(max_items / info.items_per_page)
-                    else:
-                        max_pages = 50
-                    break
-
-                val = int(raw)
-                if val < 1:
-                    print("  ⚠  Please enter a number greater than 0.")
-                    continue
-
-                max_items = val
-                if info.items_per_page:
-                    max_pages = math.ceil(val / info.items_per_page)
-                    max_pages = max(1, max_pages)
-                else:
-                    max_pages = 50
-                break
-
-            except ValueError:
-                print("  ⚠  Please enter a valid number.")
-
-        print(f"\n  ✅ Will scrape up to {max_items or 'all'} grants")
-
-        return ScrapeConfig(
-            max_pages     = max_pages,
-            max_items     = max_items,
-            enable_scroll = info.site_type in ("infinite_scroll", "single_page"),
-            site_info     = info,
-        )

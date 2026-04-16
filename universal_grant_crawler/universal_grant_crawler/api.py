@@ -46,29 +46,80 @@ def execute_crawl(config_name):
 
 
 def push_grant_to_frappe(config_name, grant):
-    """Called dynamically by the script every time a grant is extracted. Skips duplicates."""
+    """Called dynamically by the script every time a grant is extracted. Skips duplicates.
+    Returns 'saved', 'skipped', or 'expired'."""
+    from datetime import datetime, date
+
     title = grant.get("title", "Unknown")
 
-    # Skip if a record with this exact title already exists
-    if frappe.db.exists("Crawled Grant Record", title):
-        print(f"  ⏭  Skipping duplicate: {title}")
-        return
+    # ── Compute status from deadline ─────────────────────────────────────────
+    status = "Active"
+    deadline_str = (grant.get("deadline") or "").strip()
+    if deadline_str and deadline_str.lower() not in ("not specified", "rolling", "open", "ongoing", "tbd"):
+        for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%m/%d/%Y", "%d/%m/%Y", "%B %d, %Y", "%b %d, %Y"):
+            try:
+                deadline_date = datetime.strptime(deadline_str, fmt).date()
+                if deadline_date < date.today():
+                    status = "Expired"
+                break
+            except ValueError:
+                continue
 
-    doc = frappe.get_doc({
-        "doctype": "Crawled Grant Record",
-        "crawler_config": config_name,
-        "title": title,
-        "organization": grant.get("organization"),
-        "grant_amount": grant.get("funding_amount"),
-        "thematic_area": grant.get("thematic_area"),
-        "deadline": grant.get("deadline"),
-        "description": grant.get("short_description"),
-        "country": grant.get("country"),
-        "source_url": (grant.get("source_url") or "")[:900]  # Safety truncation
-    })
-    doc.insert(ignore_permissions=True, ignore_if_duplicate=True)
-    frappe.db.commit()
-    print(f"  💾 Saved: {title}")
+    # Skip saving expired grants entirely
+    if status == "Expired":
+        print(f"  ⏭  Skipping expired grant: {title} (deadline: {deadline_str})")
+        return "expired"
+
+    # Check if a record with this exact title already exists
+    existing_name = frappe.db.get_value("Crawled Grant Record", {"title": title}, "name")
+
+    # Safety truncation for URL
+    source_url_val = (grant.get("source_url") or "")[:900]
+
+    if existing_name:
+        try:
+            doc = frappe.get_doc("Crawled Grant Record", existing_name)
+            doc.crawler_config = config_name
+            doc.organization = grant.get("organization")
+            doc.grant_amount = grant.get("funding_amount")
+            doc.thematic_area = grant.get("thematic_area")
+            doc.status = status
+            doc.deadline = grant.get("deadline")
+            doc.description = grant.get("short_description")
+            doc.country = grant.get("country")
+            doc.source_url = source_url_val
+            doc.save(ignore_permissions=True)
+            frappe.db.commit()
+            print(f"  🔄 Updated: {title}")
+            return "updated"
+        except Exception:
+            frappe.clear_last_message()
+            print(f"  ⚠  Failed to update: {title}")
+            return "skipped"
+    else:
+        try:
+            doc = frappe.get_doc({
+                "doctype": "Crawled Grant Record",
+                "crawler_config": config_name,
+                "title": title,
+                "organization": grant.get("organization"),
+                "grant_amount": grant.get("funding_amount"),
+                "thematic_area": grant.get("thematic_area"),
+                "status": status,
+                "deadline": grant.get("deadline"),
+                "description": grant.get("short_description"),
+                "country": grant.get("country"),
+                "source_url": source_url_val
+            })
+            doc.insert(ignore_permissions=True)
+            frappe.db.commit()
+            print(f"  💾 Saved: {title}")
+            return "saved"
+        except frappe.UniqueValidationError:
+            # Race condition: another worker inserted between our check and insert
+            frappe.clear_last_message()
+            print(f"  ⏭  Skipping duplicate (race): {title}")
+            return "skipped"
 
 
 def log_to_frappe(config_name, log_text):
@@ -187,12 +238,14 @@ def get_llm_usage_dashboard(period="Today"):
             }
 
     # Today's usage for the progress bars (always today, regardless of period)
+    # Only count actual API calls — exclude 'Rate Limited' which never hit the API
     today_usage_sql = """
         SELECT
             provider_name,
             COUNT(*) as used_today
         FROM `tabLLM Usage Log`
         WHERE DATE(creation) = CURDATE()
+          AND status != 'Rate Limited'
         GROUP BY provider_name
     """
     today_usage_rows = frappe.db.sql(today_usage_sql, as_dict=True)
@@ -283,10 +336,12 @@ def get_provider_credits():
     if not settings or not hasattr(settings, "llm_providers"):
         return {}
 
+    # Only count actual API calls — exclude 'Rate Limited' which never hit the API
     today_usage_sql = """
         SELECT provider_name, COUNT(*) as used
         FROM `tabLLM Usage Log`
         WHERE DATE(creation) = CURDATE()
+          AND status != 'Rate Limited'
         GROUP BY provider_name
     """
     today_usage = {r["provider_name"]: r["used"]
@@ -305,3 +360,18 @@ def get_provider_credits():
             }
 
     return result
+
+@frappe.whitelist(allow_guest=True)
+def get_grants():
+    return frappe.get_all(
+        "Crawled Grant Record",
+        fields=[
+            "title",
+            "organization",
+            "funding_amount",
+            "deadline",
+            "source_url"
+        ],
+        order_by="creation desc",
+        limit_page_length=20
+    )
